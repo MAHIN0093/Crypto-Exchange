@@ -3,7 +3,14 @@ package main
 import (
 	"fmt"
 	"testing"
+	"reflect"
 )
+
+func assert(t *testing.T, a, b any){
+	if !reflect.DeepEqual(a, b){
+		t.Errorf("Assertion failed: (%T: %+v) != (%T: %+v)", a, a, b, b)
+	}
+}
 
 func TestLimit(t *testing.T) {
 	l := NewLimit(10000)
@@ -19,17 +26,55 @@ func TestLimit(t *testing.T) {
 
 	fmt.Println(l) 
 }
-func TestOrderbook(t *testing.T) {
+func TestPlaceLimitOrder(t *testing.T) {
 	ob := NewOrderbook()
 
-	buyOrderA := NewOrder(true,10)
-	buyOrderB := NewOrder(true,2000)
-	ob.PlaceOrder(18000, buyOrderA)
-	ob.PlaceOrder(19000, buyOrderB)
+	sellOrderA:= NewOrder(false, 10)
+	sellOrderB:= NewOrder(false, 5)
+	ob.PlaceLimitOrder(10000, sellOrderA) 
+	ob.PlaceLimitOrder(9000, sellOrderB)
 
-	fmt.Printf("%+v", ob)
-	//for i := 0; i < len(ob.Bids);i++{
-	//	fmt.Printf("%+v", ob.Bids[i])
-	//}
-	
+	assert(t, len(ob.asks), 2)
+}
+
+func TestPlaceMarketOrder(t *testing.T) {
+	ob := NewOrderbook()
+
+	sellOrder:= NewOrder(false, 20)
+	ob.PlaceLimitOrder(10000, sellOrder)  
+
+	buyOrder:= NewOrder(true, 10)
+	matches := ob.PlaceMarketOrder(buyOrder)
+
+	assert(t, len(matches), 1)
+	assert(t, len(ob.asks), 1)
+	assert(t, ob.AskTotalVolume(), 10.0)
+	assert(t, matches[0].Ask, sellOrder)
+	assert(t, matches[0].Bid, buyOrder)
+
+	assert(t, matches[0].SizeFilled, 10.0)
+	assert(t, matches[0].Price, 10000.0)
+	assert(t, buyOrder.IsFilled(), true)
+	fmt.Printf("%+v", matches)
+}
+
+func TestPlaceMarketOrderMultifill(t *testing.T) {
+	ob := NewOrderbook()
+
+	buyOrderA:= NewOrder(true, 5)
+	buyOrderB:= NewOrder(true, 8)
+	buyOrderC:= NewOrder(true, 10)
+
+	ob.PlaceLimitOrder(5000, buyOrderC)
+	ob.PlaceLimitOrder(10000, buyOrderA)
+	ob.PlaceLimitOrder(9000, buyOrderB)
+
+	assert(t, ob.BidTotalVolume(), 23.0)
+
+	sellOrder:= NewOrder(false, 20)
+	matches := ob.PlaceMarketOrder(sellOrder)
+	assert(t, len(matches), 3) 
+	//assert(t, len(ob.bids), 1)
+
+	fmt.Printf("%+v", matches)
 }
