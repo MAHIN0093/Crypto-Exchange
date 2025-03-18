@@ -98,7 +98,7 @@ func TestCancelorders(t *testing.T) {
 
 	assert(t, ob.BidTotalVolume(), 24.0)
 
-	ob.cancelOrder(buyOrderA)
+	ob.CancelOrder(buyOrderA)
 
 	assert(t, ob.BidTotalVolume(), 19.0)
 	assert(t, len(ob.bids), 3)
