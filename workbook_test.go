@@ -64,17 +64,42 @@ func TestPlaceMarketOrderMultifill(t *testing.T) {
 	buyOrderA:= NewOrder(true, 5)
 	buyOrderB:= NewOrder(true, 8)
 	buyOrderC:= NewOrder(true, 10)
+	buyOrderD:= NewOrder(true, 1)
 
 	ob.PlaceLimitOrder(5000, buyOrderC)
-	ob.PlaceLimitOrder(10000, buyOrderA)
+	ob.PlaceLimitOrder(5000, buyOrderD)
 	ob.PlaceLimitOrder(9000, buyOrderB)
+	ob.PlaceLimitOrder(10000, buyOrderA)
 
-	assert(t, ob.BidTotalVolume(), 23.0)
+	assert(t, ob.BidTotalVolume(), 24.0)
 
 	sellOrder:= NewOrder(false, 20)
 	matches := ob.PlaceMarketOrder(sellOrder)
+
+	assert(t, ob.BidTotalVolume(), 4.0)
 	assert(t, len(matches), 3) 
-	//assert(t, len(ob.bids), 1)
+	assert(t, len(ob.bids), 1)
 
 	fmt.Printf("%+v", matches)
+}
+
+func TestCancelorders(t *testing.T) {
+	ob := NewOrderbook()
+
+	buyOrderA:= NewOrder(true, 5)
+	buyOrderB:= NewOrder(true, 8)
+	buyOrderC:= NewOrder(true, 10)
+	buyOrderD:= NewOrder(true, 1) 
+
+	ob.PlaceLimitOrder(5000, buyOrderC)
+	ob.PlaceLimitOrder(5000, buyOrderD)
+	ob.PlaceLimitOrder(9000, buyOrderB)
+	ob.PlaceLimitOrder(10000, buyOrderA)
+
+	assert(t, ob.BidTotalVolume(), 24.0)
+
+	ob.cancelOrder(buyOrderA)
+
+	assert(t, ob.BidTotalVolume(), 19.0)
+	assert(t, len(ob.bids), 3)
 }

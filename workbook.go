@@ -38,6 +38,10 @@ func (o *Order) String() string {
 	return fmt.Sprintf("[size: %.2f]", o.Size)
 }
 
+func (o *Order) IsFilled() bool {
+	return o.Size == 0
+}
+
 type Limit struct {
 	Price       float64
 	Orders      Orders
@@ -100,7 +104,7 @@ func (l *Limit) fillOrder(a, b *Order) Match {
 		ask = a
 	}
 
-	if a.Size > b.Size {
+	if a.Size >= b.Size {
 		a.Size -= b.Size
 		sizeFilled = b.Size
 		b.Size = 0
@@ -148,10 +152,10 @@ func (l *Limit) Fill(o *Order) []Match {
 	return matches
 }
 
-func (o *Order) IsFilled() bool {
-	return o.Size == 0
+func(ob *Orderbook) cancelOrder(o *Order) {
+	limit := o.Limit
+	limit.DeleteOrder(o)
 }
-
 
 type Orderbook struct {
 	asks []*Limit
@@ -182,6 +186,10 @@ func (ob *Orderbook) PlaceMarketOrder(o *Order) []Match {
 		for _, limit := range ob.Asks() {
 			limitMatches := limit.Fill(o)
 			matches = append(matches, limitMatches...)
+
+			if len(limit.Orders) == 0 {
+				ob.clearLimit(true, limit)
+			}
 		}
 	} else {
 		if o.Size > ob.BidTotalVolume() {
@@ -191,6 +199,10 @@ func (ob *Orderbook) PlaceMarketOrder(o *Order) []Match {
 		for _, limit := range ob.Bids() {
 			limitMatches := limit.Fill(o)
 			matches = append(matches, limitMatches...)
+
+			if len(limit.Orders) == 0 {
+				ob.clearLimit(true, limit)
+			}
 		
 		}
 	}
@@ -210,7 +222,6 @@ func (ob *Orderbook) PlaceLimitOrder(price float64, o *Order) {
 
 	if limit == nil {
 		limit = NewLimit(price)
-		limit.AddOrder(o)
 
 		if o.Bid {
 			ob.bids = append(ob.bids, limit)
@@ -221,17 +232,30 @@ func (ob *Orderbook) PlaceLimitOrder(price float64, o *Order) {
 		}
 	}
 
+	limit.AddOrder(o)
+
 }
 
 func (ob *Orderbook) clearLimit(bid bool, l *Limit) {
 	if bid {
+		delete(ob.BidLimits, l.Price)
+
 		for i := 0; i < len(ob.bids); i++ {
 			if ob.bids[i] == l {
 				ob.bids[i] = ob.bids[len(ob.bids)-1]
 				ob.bids = ob.bids[:len(ob.bids)-1]
 			}
 		}
-	} 
+	} else {
+		delete(ob.AskLimits, l.Price)
+
+		for i := 0; i < len(ob.asks); i++ {
+			if ob.asks[i] == l {
+				ob.asks[i] = ob.asks[len(ob.asks)-1]
+				ob.asks = ob.asks[:len(ob.asks)-1]
+			}
+		}
+	}
 }
 
 
