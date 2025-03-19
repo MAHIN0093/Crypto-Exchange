@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -11,6 +12,8 @@ import (
 
 func main() {
 	e := echo.New()
+
+	e.HTTPErrorHandler = httpErrorHandler
 	ex := NewExchange()
 
 	e.GET("/book/:market", ex.handleGetbook)
@@ -21,6 +24,10 @@ func main() {
 
 	e.Start(":3000")
 
+}
+
+func httpErrorHandler(err error, c echo.Context) {
+	fmt.Println(err)
 }
 
 type Market string
@@ -48,6 +55,12 @@ func NewExchange() *Exchange {
 	return &Exchange{
 		orderbooks: orderbooks,
 	}
+}
+
+type MatchedOrder struct {
+	Size  float64
+	Price float64
+	ID    int64
 }
 
 type PlaceOrderRequest struct {
@@ -125,35 +138,10 @@ func (ex *Exchange) CancelOrder(c echo.Context) error {
 	id, _ := strconv.Atoi(idStr)
 
 	ob := ex.orderbooks[MarketETH]
-	orderCanceled := false
+	order := ob.Orders[int64(id)]
+	ob.CancelOrder(order)
 
-	for _, limit := range ob.Asks() {
-		for _, order := range limit.Orders {
-			if order.ID == int64(id) {
-				ob.CancelOrder(order)
-				orderCanceled = true
-			}
-
-			if orderCanceled {
-				return c.JSON(http.StatusOK, map[string]any{"message": "Order canceled successfully"})
-			}
-		}
-	}
-
-	for _, limit := range ob.Bids() {
-		for _, order := range limit.Orders {
-			if order.ID == int64(id) {
-				ob.CancelOrder(order)
-				orderCanceled = true
-			}
-
-			if orderCanceled {
-				return c.JSON(http.StatusOK, map[string]any{"message": "Order canceled successfully"})
-			}
-		}
-	}
-
-	return nil
+	return c.JSON(200, map[string]any{"message": "Limit Order Deleted successfully"})
 }
 
 func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
@@ -164,9 +152,7 @@ func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
 	}
 
 	market := Market(placeOrderData.Market)
-
 	ob := ex.orderbooks[market]
-
 	order := orderbook.NewOrder(placeOrderData.Bid, placeOrderData.Size)
 
 	if placeOrderData.Type == LimitOrder {
@@ -176,7 +162,25 @@ func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
 
 	if placeOrderData.Type == MarketOrder {
 		matches := ob.PlaceMarketOrder(order)
-		return c.JSON(200, map[string]any{"matches": len(matches)})
+		matchedOrders := make([]*MatchedOrder, len(matches))
+
+		isBid := false
+		if order.Bid {
+			isBid = true
+		}
+
+		for i := range matchedOrders {
+			id := matches[i].Bid.ID
+			if isBid {
+				id = matches[i].Ask.ID
+			}
+			matchedOrders[i] = &MatchedOrder{
+				ID:    id,
+				Size:  matches[i].SizeFilled,
+				Price: matches[i].Price,
+			}
+		}
+		return c.JSON(200, map[string]any{"matches": matchedOrders})
 	}
 
 	return nil
