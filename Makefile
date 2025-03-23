@@ -1,8 +1,5 @@
-build:
-	go build -o bin/go-lang
-
 run:
-	./bin/go-lang
+	go build -o bin/go-lang && ./bin/go-lang
 
 test:
 	go test -v ./...

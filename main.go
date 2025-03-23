@@ -3,18 +3,71 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
+	"context"
+	"crypto/ecdsa"
+	"math/big"
+
 	"github.com/MAHIN0093/go-lang/orderbook"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/labstack/echo/v4"
+)
+
+const (
+	exchangePrivateKey           = "4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d"
+	MarketOrder        Ordertype = "MARKET"
+	LimitOrder         Ordertype = "LIMIT"
+	MarketETH          Market    = "ETH"
+)
+
+type (
+	Market    string
+	Ordertype string
+
+	MatchedOrder struct {
+		Size  float64
+		Price float64
+		ID    int64
+	}
+
+	PlaceOrderRequest struct {
+		Type   Ordertype
+		Bid    bool
+		Size   float64
+		Price  float64
+		Market Market
+	}
+
+	Order struct {
+		ID        int64
+		Price     float64
+		Size      float64
+		Bid       bool
+		Timestamp int64
+	}
+	
+	orderbookData struct {
+		TotalBidVolume float64
+		TotalAskVolume float64
+		Asks           []*Order
+		Bids           []*Order
+	}
 )
 
 func main() {
 	e := echo.New()
 
 	e.HTTPErrorHandler = httpErrorHandler
-	ex := NewExchange()
+	ex, err := NewExchange(exchangePrivateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	e.GET("/book/:market", ex.handleGetbook)
 
@@ -22,6 +75,63 @@ func main() {
 
 	e.DELETE("/order/:id", ex.CancelOrder)
 
+	client, err := ethclient.Dial("http://localhost:8545")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	privateKey, err := crypto.HexToECDSA("4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		log.Fatal("error casting public key to ECDSA")
+	}
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+
+	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	value := big.NewInt(1000000000000000000) // in wei (1 eth)
+	gasLimit := uint64(21000)                // in units
+	gasPrice, err := client.SuggestGasPrice(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	toAddress := common.HexToAddress("0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1")
+	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, gasPrice, nil)
+
+	chainID, err := client.NetworkID(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = client.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("tx sent: %s\n", signedTx.Hash().Hex())
+
+	ctx := context.Background()
+	address := common.HexToAddress("0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1")
+	balance, err := client.BalanceAt(ctx, address, nil)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(balance)
 	e.Start(":3000")
 
 }
@@ -30,60 +140,25 @@ func httpErrorHandler(err error, c echo.Context) {
 	fmt.Println(err)
 }
 
-type Market string
-
-const (
-	MarketETH Market = "ETH"
-)
-
-type Ordertype string
-
-const (
-	MarketOrder Ordertype = "MARKET"
-	LimitOrder  Ordertype = "LIMIT"
-)
-
 type Exchange struct {
+	PrivateKey *ecdsa.PrivateKey
 	orderbooks map[Market]*orderbook.Orderbook
 }
 
-func NewExchange() *Exchange {
+func NewExchange(privateKey string) (*Exchange, error) {
 
 	orderbooks := make(map[Market]*orderbook.Orderbook)
 	orderbooks[MarketETH] = orderbook.NewOrderbook()
 
-	return &Exchange{
-		orderbooks: orderbooks,
+	pk, err := crypto.HexToECDSA(exchangePrivateKey)
+	if err != nil {
+		return nil, err
 	}
-}
 
-type MatchedOrder struct {
-	Size  float64
-	Price float64
-	ID    int64
-}
-
-type PlaceOrderRequest struct {
-	Type   Ordertype
-	Bid    bool
-	Size   float64
-	Price  float64
-	Market Market
-}
-
-type Order struct {
-	ID        int64
-	Price     float64
-	Size      float64
-	Bid       bool
-	Timestamp int64
-}
-
-type orderbookData struct {
-	TotalBidVolume float64
-	TotalAskVolume float64
-	Asks           []*Order
-	Bids           []*Order
+	return &Exchange{
+		PrivateKey: pk,
+		orderbooks: orderbooks,
+	}, nil
 }
 
 func (ex *Exchange) handleGetbook(c echo.Context) error {
