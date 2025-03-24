@@ -24,10 +24,11 @@ func transferETH(client *ethclient.Client, fromPK *ecdsa.PrivateKey, to common.A
 
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
-	nonce, err := client.PendingNonceAt(ctx, fromAddress)
+	nonce, err := client.NonceAt(ctx, fromAddress, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err, nonce)
 	}
+	
 
 	gasLimit := uint64(21000)         
 	gasPrice, err := client.SuggestGasPrice(ctx)
@@ -45,11 +46,6 @@ func transferETH(client *ethclient.Client, fromPK *ecdsa.PrivateKey, to common.A
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), fromPK)
 	if err != nil {
 		return err
-	}
-
-	err = client.SendTransaction(ctx, signedTx)
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	return client.SendTransaction(ctx, signedTx)
