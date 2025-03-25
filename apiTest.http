@@ -3,11 +3,11 @@ POST http://localhost:3000/order
 
 {
   "bid": true,
-  "size": 20,
+  "size": 10000000000000,
   "price": 9000.0,
   "type": "LIMIT",
   "market": "ETH",
-  "userID": 8
+  "userID": 0
    
 }
 ###  Limit order Request Bid 2
@@ -15,11 +15,11 @@ POST http://localhost:3000/order
 
 {
   "bid": true,
-  "size": 20,
+  "size": 20000000000000,
   "price": 90000.0,
   "type": "LIMIT",
   "market": "ETH",
-  "userID": 8
+  "userID": 0
    
 }
 
@@ -32,17 +32,30 @@ POST http://localhost:3000/order
   "price": 9000.0,
   "type": "LIMIT",
   "market": "ETH",
-  "userID": 8
+  "userID": 0
 }
 
-### Market order Request 
+### Market order Request Ask 
 POST http://localhost:3000/order
 
 {
   "bid": false,
-  "size": 10,
+  "size": 100000000000,
   "type": "MARKET",
-  "market": "ETH"
+  "market": "ETH",
+  "userID": 8
+   
+}
+
+### Market order Request Bid
+POST http://localhost:3000/order
+
+{
+  "bid": true,
+  "size": 100000000000,
+  "type": "MARKET",
+  "market": "ETH",
+  "userID": 8
    
 }
 

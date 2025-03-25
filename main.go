@@ -12,7 +12,6 @@ import (
 	"math/big"
 
 	"github.com/MAHIN0093/go-lang/orderbook"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/labstack/echo/v4"
@@ -20,6 +19,7 @@ import (
 
 const (
 	exchangePrivateKey           = "4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d"
+	userPrivateKey               = "829e924fdf021ba3dbbc4225edfece9aca04b929d6e75613329ca6f1d31c0bb4"
 	MarketOrder        Ordertype = "MARKET"
 	LimitOrder         Ordertype = "LIMIT"
 	MarketETH          Market    = "ETH"
@@ -30,6 +30,7 @@ type (
 	Ordertype string
 
 	MatchedOrder struct {
+		UserID int64
 		Size  float64
 		Price float64
 		ID    int64
@@ -45,6 +46,7 @@ type (
 	}
 
 	Order struct {
+		UserID    int64
 		ID        int64
 		Price     float64
 		Size      float64
@@ -75,16 +77,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pkStr := "829e924fdf021ba3dbbc4225edfece9aca04b929d6e75613329ca6f1d31c0bb4"
-	pk, err := crypto.HexToECDSA(pkStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	user := &User{
-		ID: 8,
-		PrivateKey: pk,
-	}
-	ex.Users[user.ID] = user
+	exAcc := NewUser(0, exchangePrivateKey)
+	userAcc := NewUser(8, userPrivateKey)
+
+	ex.Users[exAcc.ID] = exAcc
+	ex.Users[userAcc.ID] = userAcc
 
 	e.GET("/book/:market", ex.handleGetbook)
 
@@ -92,26 +89,31 @@ func main() {
 
 	e.DELETE("/order/:id", ex.CancelOrder)
 
-	address:= "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1"
-	balance, _ := client.BalanceAt(context.Background(), common.HexToAddress(address), nil)
-	fmt.Println(balance)
+	exAddress := crypto.PubkeyToAddress(exAcc.PrivateKey.PublicKey)
+	exBalance, _ := client.BalanceAt(context.Background(), exAddress, nil)
+	fmt.Printf("Exchange Balance: %d\n", exBalance)
+
+	userAddress := crypto.PubkeyToAddress(userAcc.PrivateKey.PublicKey)
+	userBalance, _ := client.BalanceAt(context.Background(), userAddress, nil)
+	fmt.Printf("User Balance: %d\n", userBalance)
 
 	e.Start(":3000")
 
 }
 
 type User struct {
-	ID 	   int64
+	ID         int64
 	PrivateKey *ecdsa.PrivateKey
 }
 
-func NewUser(privateKey string) *User {
+func NewUser(id int64, privateKey string) *User {
 	pk, err := crypto.HexToECDSA(privateKey)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	return &User{
+		ID:         id,
 		PrivateKey: pk,
 	}
 }
@@ -121,9 +123,9 @@ func httpErrorHandler(err error, c echo.Context) {
 }
 
 type Exchange struct {
-	Client *ethclient.Client
-	Users map[int64]*User
-	orders map[int64]int64
+	Client     *ethclient.Client
+	Users      map[int64]*User
+	orders     map[int64]int64
 	PrivateKey *ecdsa.PrivateKey
 	orderbooks map[Market]*orderbook.Orderbook
 }
@@ -139,9 +141,9 @@ func NewExchange(privateKey string, client *ethclient.Client) (*Exchange, error)
 	}
 
 	return &Exchange{
-		Client: client,
-		Users: make(map[int64]*User),
-		orders: make(map[int64]int64),
+		Client:     client,
+		Users:      make(map[int64]*User),
+		orders:     make(map[int64]int64),
 		PrivateKey: pk,
 		orderbooks: orderbooks,
 	}, nil
@@ -168,6 +170,7 @@ func (ex *Exchange) handleGetbook(c echo.Context) error {
 	for _, limit := range ob.Asks() {
 		for _, order := range limit.Orders {
 			o := Order{
+				UserID:    order.UserID,
 				ID:        order.ID,
 				Price:     limit.Price,
 				Size:      order.Size,
@@ -181,6 +184,7 @@ func (ex *Exchange) handleGetbook(c echo.Context) error {
 	for _, limit := range ob.Bids() {
 		for _, order := range limit.Orders {
 			o := Order{
+				UserID:    order.UserID,
 				ID:        order.ID,
 				Price:     limit.Price,
 				Size:      order.Size,
@@ -217,10 +221,13 @@ func (ex *Exchange) handlePlaceMarketOrder(market Market, order *orderbook.Order
 
 	for i := range matchedOrders {
 		id := matches[i].Bid.ID
+		userID := matches[i].Bid.UserID
 		if isBid {
 			id = matches[i].Ask.ID
+			userID = matches[i].Ask.UserID
 		}
 		matchedOrders[i] = &MatchedOrder{
+			UserID: userID,
 			ID:    id,
 			Size:  matches[i].SizeFilled,
 			Price: matches[i].Price,
@@ -235,22 +242,7 @@ func (ex *Exchange) handlePlaceLimitOrder(market Market, price float64, order *o
 	ob := ex.orderbooks[market]
 	ob.PlaceLimitOrder(price, order)
 
-	user, ok := ex.Users[order.UserID]
-	if !ok {
-		return fmt.Errorf("user not found: %d", user.ID)
-	}
-
-	exchangePublicKey := ex.PrivateKey.Public()
-	publicKeyECDSA, ok := exchangePublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return fmt.Errorf("error casting public key to ECDSA")
-	}
-
-	toAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	amount := big.NewInt(int64(order.Size))
-
-
-	return transferETH(ex.Client, user.PrivateKey, toAddress, amount)
+	return nil
 
 }
 
@@ -285,9 +277,22 @@ func (ex *Exchange) handlePlaceOrder(c echo.Context) error {
 }
 
 func (ex *Exchange) handleMatches(matches []orderbook.Match) error {
-	
+	for _, match := range matches {
+		fromUser, ok := ex.Users[match.Ask.UserID]
+		if !ok {
+			return fmt.Errorf("user not found: %d", match.Ask.UserID)
+		}
 
+		toUser, ok := ex.Users[match.Bid.UserID]
+		if !ok {
+			return fmt.Errorf("user not found: %d", match.Bid.UserID)
+		}
+		toAddress := crypto.PubkeyToAddress(toUser.PrivateKey.PublicKey)
 
-	
-	return fmt.Errorf("matches: %v", matches)
+		amount := big.NewInt(int64(match.SizeFilled))
+
+		transferETH(ex.Client, fromUser.PrivateKey, toAddress, amount)
+
+	}
+	return nil
 }
